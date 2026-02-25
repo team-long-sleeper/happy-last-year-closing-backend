@@ -1,0 +1,109 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String         @id @default(uuid())
+  name          String
+  profileImage  String
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  lastLoginAt   DateTime
+  oauthAccounts OAuthAccount[]
+
+  contacts        Contact[]        @relation("OwnerContacts")
+  linkedContacts  Contact[]        @relation("LinkedUser")
+  friends         Friendship[]     @relation("UserFriends")
+  friendOf        Friendship[]     @relation("FriendOf")
+  refreshSessions RefreshSession[]
+}
+
+model OAuthAccount {
+  id                String        @id @default(uuid())
+  provider          OAuthProvider
+  providerUserId    String
+  userId            String
+  oauthAccessToken  String?
+  oauthRefreshToken String?
+  expiresAt         DateTime?
+  user              User          @relation(fields: [userId], references: [id])
+
+  @@unique([provider, providerUserId])
+}
+
+enum OAuthProvider {
+  KAKAO
+  GOOGLE
+  NAVER
+}
+
+model Contact {
+  id             String         @id @default(uuid())
+  ownerUserId    String
+  name           String
+  provider       OAuthProvider?
+  providerUserId String?
+  linkedUserId   String?
+  createdAt      DateTime       @default(now())
+
+  owner User @relation("OwnerContacts", fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  linkedUser User? @relation("LinkedUser", fields: [linkedUserId], references: [id])
+
+  @@unique([ownerUserId, provider, providerUserId])
+}
+
+model Friendship {
+  id           String           @id @default(uuid())
+  userId       String
+  friendUserId String
+  status       FriendshipStatus
+  createdAt    DateTime         @default(now())
+
+  user   User @relation("UserFriends", fields: [userId], references: [id], onDelete: Cascade)
+  friend User @relation("FriendOf", fields: [friendUserId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, friendUserId])
+}
+
+enum FriendshipStatus {
+  pending
+  accepted
+  blocked
+}
+
+model RefreshSession {
+  id        Int    @id @default(autoincrement())
+  userId    String
+  tokenHash String
+
+  sessionKey String?
+
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+
+  ip        String?
+  userAgent String?
+
+  lastIP        String?
+  lastUserAgent String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tokenHash])
+  @@unique([sessionKey])
+  @@index([userId]) // note 이게 무슨 뜻이지
+}
