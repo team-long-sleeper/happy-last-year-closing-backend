@@ -3,6 +3,8 @@ import { Pool } from 'pg';
 import authRoutes from './auth.routes.js';
 import userRoutes from './user.routes.js';
 import friendsRoutes from './friends.routes.js';
+import episodesRoutes from './episodes.routes.js';
+import uploadsRoutes from './uploads.routes.js';
 
 export const routes = Router();
 
@@ -18,3 +20,5 @@ routes.get('/health', async (_req, res) => {
 routes.use('/auth', authRoutes);
 routes.use('/user', userRoutes);
 routes.use('/friends', friendsRoutes);
+routes.use('/episodes', episodesRoutes);
+routes.use('/uploads', uploadsRoutes);
