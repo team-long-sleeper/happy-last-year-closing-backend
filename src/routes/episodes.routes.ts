@@ -1,6 +1,6 @@
 import { prisma } from '@lib/prisma.js';
 import express from 'express';
-import z, { flattenError } from 'zod';
+import { z, flattenError } from 'zod';
 import { requireAuth } from '../middleware/auth.js';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { r2, R2_BUCKET } from '../utils/r2.js';
@@ -17,16 +17,23 @@ const Place = z.object({
   url: z.string(),
 });
 
+const Picture = z.object({
+  key: z.string(),
+  order: z.number(),
+});
+
 const CreateBody = z.object({
   title: z.string().min(1),
   date: z.iso.datetime(),
   matesId: z.array(z.string()).default([]),
   place: Place,
-  coverIndex: z.number().int().nonnegative(),
-  pictureKeys: z.array(z.string().min(1)).min(1).max(50),
+  pictures: z.array(Picture).min(1).max(5),
 });
 
-// 1 create episode
+// 들어올 때 pictures에는 새 이미지들만 들어옴
+const UpdateBody = CreateBody.extend({
+  deletedPictureId: z.array(z.number()).optional(),
+});
 
 router.post('', requireAuth, async (req, res) => {
   try {
@@ -34,37 +41,53 @@ router.post('', requireAuth, async (req, res) => {
 
     const parsed = CreateBody.safeParse(req.body);
 
-    console.log(parsed);
-
     if (!parsed.success) {
       return res.status(400).json({ message: 'Inavlid Body', errors: flattenError(parsed.error) });
     }
 
-    const { title, date, matesId, place, coverIndex, pictureKeys } = parsed.data;
+    const { title, date, matesId, place, pictures } = parsed.data;
 
-    if (coverIndex < 0 || coverIndex >= pictureKeys.length) {
-      return res.status(400).json({ message: 'coverIndex out of range' });
+    const uniqueMateIds = [...new Set(matesId)];
+    const uniquePictureKeys = [...new Set(pictures.map((pic) => pic.key))];
+
+    if (uniquePictureKeys.length !== pictures.length) {
+      return res.status(400).json({ message: 'pictureKeys contains duplicates' });
     }
 
-    const indices = [...Array(pictureKeys.length).keys()];
-    const ordered = [coverIndex, ...indices.filter((i) => i !== coverIndex)];
-    const pictureRows = ordered.map((pictureIndex, orderIndex) => ({
-      key: pictureKeys[pictureIndex]!,
-      order: orderIndex + 1,
-    }));
+    if (uniqueMateIds.length > 0) {
+      const contacts = await prisma.contact.findMany({
+        where: {
+          id: { in: uniqueMateIds },
+          ownerUserId,
+        },
+        select: { id: true },
+      });
+
+      if (contacts.length !== uniqueMateIds.length) {
+        return res
+          .status(400)
+          .json({ message: 'Some matesId are invalid or do not belong to this user' });
+      }
+    }
 
     const episode = await prisma.$transaction(async (tx) => {
       const newPlace = await tx.place.upsert({
-        where: { providerPlaceId: place.providerId },
+        where: { providerId: place.providerId },
+        // todo 장소가 업데이트되면 ProviderId도 바뀌나? 좌표는 안바뀔거아니야
         update: {
-          name: place.name,
-        },
-        create: {
-          providerPlaceId: place.providerId,
           name: place.name,
           address: place.address,
           lat: place.lat,
           lng: place.lng,
+          url: place.url,
+        },
+        create: {
+          providerId: place.providerId,
+          name: place.name,
+          address: place.address,
+          lat: place.lat,
+          lng: place.lng,
+          url: place.url,
         },
       });
 
@@ -73,13 +96,15 @@ router.post('', requireAuth, async (req, res) => {
           ownerUserId,
           title,
           date: new Date(date),
-          matesId,
           placeId: newPlace.id,
+          mates: {
+            create: uniqueMateIds.map((contactId) => ({ contact: { connect: { id: contactId } } })),
+          },
         },
       });
 
       await tx.episodePicture.createMany({
-        data: pictureRows.map((p) => ({
+        data: pictures.map((p) => ({
           episodeId: created.id,
           key: p.key,
           order: p.order,
@@ -101,36 +126,41 @@ router.get('', requireAuth, async (req, res) => {
     const { userId: ownerUserId } = req.auth!;
 
     const episodes = await prisma.episode.findMany({
-      where: {
-        ownerUserId,
-      },
+      where: { ownerUserId },
       orderBy: { date: 'desc' },
       include: {
-        pictures: { where: { order: 1 }, take: 1 },
+        pictures: { orderBy: { order: 'asc' } },
+        place: true,
+        mates: {
+          include: {
+            contact: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
       },
     });
 
     const items = await Promise.all(
       episodes.map(async (ep) => {
-        const cover = ep.pictures[0];
-        let coverUrl: string | null = null;
-
-        if (cover) {
-          const cmd = new GetObjectCommand({
-            Bucket: R2_BUCKET,
-            Key: cover.key,
-          });
-          coverUrl = await getSignedUrl(r2, cmd, { expiresIn: 60 * 5 });
-        }
+        const pictures = await Promise.all(
+          ep.pictures.map(async (p) => {
+            const cmd = new GetObjectCommand({ Bucket: R2_BUCKET, Key: p.key });
+            const url = await getSignedUrl(r2, cmd, { expiresIn: 60 * 5 });
+            return { id: p.id, order: p.order, url };
+          }),
+        );
 
         return {
           id: ep.id,
           title: ep.title,
           date: ep.date,
-          matesId: ep.matesId,
-          placeId: ep.placeId,
-          coverUrl,
-          createdAt: ep.createdAt,
+          mates: ep.mates.map((m) => m.contact),
+          place: ep.place,
+          pictures,
         };
       }),
     );
@@ -145,13 +175,29 @@ router.get('', requireAuth, async (req, res) => {
 router.get('/:id', requireAuth, async (req, res) => {
   try {
     const { userId: ownerUserId } = req.auth!;
-
     const episodeId = Number(req.params.id);
-    if (!Number.isFinite(episodeId)) return res.status(400).json({ message: 'Invalid Id' });
+    if (!Number.isInteger(episodeId)) return res.status(400).json({ message: 'Invalid Id' });
 
     const episode = await prisma.episode.findFirst({
       where: { id: episodeId, ownerUserId },
-      include: { pictures: { orderBy: { order: 'asc' } } },
+      include: {
+        pictures: { orderBy: { order: 'asc' } },
+        place: { omit: { createdAt: true, id: true } },
+        mates: {
+          include: {
+            contact: {
+              select: {
+                profileImage: true,
+                id: true,
+                name: true,
+                linkedUser: {
+                  select: { profileImage: true },
+                },
+              },
+            },
+          },
+        },
+      },
     });
 
     if (!episode) return res.status(404).json({ message: 'not found' });
@@ -170,15 +216,107 @@ router.get('/:id', requireAuth, async (req, res) => {
       id: episode.id,
       title: episode.title,
       date: episode.date,
-      matesId: episode.matesId,
-      placeId: episode.placeId,
-      coverUrl: pictures[0]?.url ?? null,
       pictures,
       createdAt: episode.createdAt,
+      mates: episode.mates.map((m) => m.contact),
+      place: episode.place,
     });
   } catch (error) {
     console.log(error);
     return res.status(500).json({ message: 'internal server error' });
+  }
+});
+
+router.delete('/:id', requireAuth, async (req, res) => {
+  try {
+    const { userId } = req.auth!;
+    const episodeId = Number(req.params.id);
+
+    await prisma.episode.delete({
+      where: { ownerUserId: userId, id: episodeId },
+    });
+
+    return res.status(204).send();
+  } catch (error) {
+    console.log(error);
+  }
+});
+
+router.patch('/:id', requireAuth, async (req, res) => {
+  try {
+    const { userId } = req.auth!;
+    const episodeId = Number(req.params.id);
+
+    const parsed = UpdateBody.safeParse(req.body);
+
+    if (!parsed.success)
+      return res.status(400).json({ message: 'Inavlid Body', errors: flattenError(parsed.error) });
+
+    const { title, date, matesId, place, pictures, deletedPictureId } = parsed.data;
+    const uniqueMateIds = [...new Set(matesId)];
+
+    const episodeExists = await prisma.episode.findUnique({
+      where: { ownerUserId: userId, id: episodeId },
+    });
+
+    if (!episodeExists)
+      return res.status(404).json({ message: '해당하는 에피소드가 존재하지 않습니다.' });
+
+    const updateEpisode = await prisma.$transaction(async (tx) => {
+      const placeUpdate = await tx.place.upsert({
+        where: { providerId: place.providerId },
+        update: {
+          name: place.name,
+          address: place.address,
+          lat: place.lat,
+          lng: place.lng,
+          url: place.url,
+        },
+        create: {
+          providerId: place.providerId,
+          name: place.name,
+          address: place.address,
+          lat: place.lat,
+          lng: place.lng,
+          url: place.url,
+        },
+      });
+
+      const episode = await tx.episode.update({
+        where: { id: episodeId, ownerUserId: userId },
+        data: {
+          ownerUserId: userId,
+          title,
+          date: new Date(date),
+          placeId: placeUpdate.id,
+          mates: {
+            // 기존에 에피소드에 연결된 친구 전부 삭제
+            deleteMany: {},
+            create: uniqueMateIds.map((contactId) => ({ contact: { connect: { id: contactId } } })),
+          },
+        },
+      });
+
+      if (deletedPictureId)
+        await tx.episodePicture.deleteMany({
+          where: { id: { in: deletedPictureId } },
+        });
+
+      await tx.episodePicture.createMany({
+        data: pictures.map((pic) => ({
+          episodeId: episode.id,
+          key: pic.key,
+          order: pic.order,
+        })),
+      });
+
+      return episode;
+    });
+
+    return res.status(200).json({ id: updateEpisode.id });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({ message: 'internal server error while patch episode' });
   }
 });
 
