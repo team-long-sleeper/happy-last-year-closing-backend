@@ -31,12 +31,9 @@ router.post('/presign', requireAuth, async (req, res) => {
     const ownerUserId = req.auth!.userId;
     const parsed = Body.safeParse(req.body);
 
-    console.log('/presign parsed', parsed);
     if (!parsed.success) {
       return res.status(400).json({ message: 'Invalid body', errors: flattenError(parsed.error) });
     }
-
-    console.log('/presign parsed.data', parsed.data);
 
     const { mimeTypes } = parsed.data;
 
@@ -57,8 +54,6 @@ router.post('/presign', requireAuth, async (req, res) => {
         return { key, uploadUrl, mimeType };
       }),
     );
-
-    console.log('uploads ---------------------------------->', uploads);
 
     return res.json({ uploads });
   } catch (error) {

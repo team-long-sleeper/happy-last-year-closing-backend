@@ -301,7 +301,6 @@ router.post('/login', async (req, res) => {
     return res.status(200).json({ user });
   } catch (error) {
     console.log(error);
-    console.log(error, '여기인가?');
     return res.status(401).json({ message: 'login failed', error });
   }
 });
