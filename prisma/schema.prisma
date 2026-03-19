@@ -58,12 +58,24 @@ model Contact {
   providerUserId String?
   linkedUserId   String?
   createdAt      DateTime       @default(now())
+  profileImage   String?
 
-  owner User @relation("OwnerContacts", fields: [ownerUserId], references: [id], onDelete: Cascade)
-
+  owner      User  @relation("OwnerContacts", fields: [ownerUserId], references: [id], onDelete: Cascade)
   linkedUser User? @relation("LinkedUser", fields: [linkedUserId], references: [id])
 
+  episodes EpisodeMate[]
+
   @@unique([ownerUserId, provider, providerUserId])
+}
+
+model EpisodeMate {
+  episodeId Int
+  contactId String
+
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@id([episodeId, contactId])
 }
 
 model Friendship {
@@ -128,13 +140,14 @@ enum PlaceProvider {
 }
 
 model Place {
-  id              Int      @id @default(autoincrement())
-  providerPlaceId String   @unique
-  name            String
-  address         String
-  lat             Float
-  lng             Float
-  createdAt       DateTime @default(now())
+  id         Int      @id @default(autoincrement())
+  providerId String   @unique
+  name       String
+  address    String
+  lat        Float
+  lng        Float
+  createdAt  DateTime @default(now())
+  url        String
 
   favorites PlaceFavorite[]
   episodes  Episode[]
@@ -161,15 +174,12 @@ model Episode {
   id Int @id @default(autoincrement())
 
   ownerUserId String
-  owner       User   @relation("EpisodeOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
-
-  date           DateTime
-  title          String
-  matesId        String[]
-  placeId        Int
-  place          Place            @relation(fields: [placeId], references: [id])
-  coverPictureId Int              @default(0)
-  pictures       EpisodePicture[]
-
-  createdAt DateTime @default(now())
+  owner       User             @relation("EpisodeOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  date        DateTime
+  title       String
+  mates       EpisodeMate[]
+  placeId     Int
+  place       Place            @relation(fields: [placeId], references: [id])
+  pictures    EpisodePicture[]
+  createdAt   DateTime         @default(now())
 }
