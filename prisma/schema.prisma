@@ -27,6 +27,8 @@ model User {
   friends         Friendship[]     @relation("UserFriends")
   friendOf        Friendship[]     @relation("FriendOf")
   refreshSessions RefreshSession[]
+  episodes        Episode[]        @relation("EpisodeOwner")
+  placeFavorites  PlaceFavorite[]
 }
 
 model OAuthAccount {
@@ -56,12 +58,24 @@ model Contact {
   providerUserId String?
   linkedUserId   String?
   createdAt      DateTime       @default(now())
+  profileImage   String?
 
-  owner User @relation("OwnerContacts", fields: [ownerUserId], references: [id], onDelete: Cascade)
-
+  owner      User  @relation("OwnerContacts", fields: [ownerUserId], references: [id], onDelete: Cascade)
   linkedUser User? @relation("LinkedUser", fields: [linkedUserId], references: [id])
 
+  episodes EpisodeMate[]
+
   @@unique([ownerUserId, provider, providerUserId])
+}
+
+model EpisodeMate {
+  episodeId Int
+  contactId String
+
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@id([episodeId, contactId])
 }
 
 model Friendship {
@@ -106,4 +120,66 @@ model RefreshSession {
   @@unique([tokenHash])
   @@unique([sessionKey])
   @@index([userId]) // note 이게 무슨 뜻이지
+}
+
+model EpisodePicture {
+  id        Int    @id @default(autoincrement())
+  episodeId Int
+  key       String
+  order     Int
+
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@unique([episodeId, order])
+  @@index([episodeId])
+}
+
+enum PlaceProvider {
+  KAKAO
+  NAVER
+}
+
+model Place {
+  id         Int      @id @default(autoincrement())
+  providerId String   @unique
+  name       String
+  address    String
+  lat        Float
+  lng        Float
+  createdAt  DateTime @default(now())
+  url        String
+
+  favorites PlaceFavorite[]
+  episodes  Episode[]
+
+  @@index([lat, lng])
+}
+
+model PlaceFavorite {
+  id          Int    @id @default(autoincrement())
+  placeId     Int
+  ownerUserId String
+
+  aliasName String
+  createdAt DateTime @default(now())
+
+  owner User  @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  place Place @relation(fields: [placeId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerUserId, placeId])
+  @@index([ownerUserId, aliasName])
+}
+
+model Episode {
+  id Int @id @default(autoincrement())
+
+  ownerUserId String
+  owner       User             @relation("EpisodeOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  date        DateTime
+  title       String
+  mates       EpisodeMate[]
+  placeId     Int
+  place       Place            @relation(fields: [placeId], references: [id])
+  pictures    EpisodePicture[]
+  createdAt   DateTime         @default(now())
 }

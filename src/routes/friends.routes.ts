@@ -14,6 +14,7 @@ router.get('', requireAuth, async (req, res) => {
       select: {
         id: true,
         name: true,
+        profileImage: true,
         linkedUser: {
           select: {
             id: true,
@@ -31,7 +32,7 @@ router.get('', requireAuth, async (req, res) => {
     const dataResult = contacts.map((c) => ({
       id: c.id,
       name: c.name,
-      profileImage: pickRandomDefaultProfileImage(),
+      profileImage: c.profileImage,
       social: c.linkedUser ? c.linkedUser.oauthAccounts.map((p) => p.provider) : null,
     }));
 
@@ -46,7 +47,11 @@ router.post('', requireAuth, async (req, res) => {
     const { name } = req.body as { name: string };
 
     const newContact = await prisma.contact.create({
-      data: { name, owner: { connect: { id: req.auth!.userId } } },
+      data: {
+        name,
+        owner: { connect: { id: req.auth!.userId } },
+        profileImage: pickRandomDefaultProfileImage(),
+      },
     });
 
     return res.status(201).json(newContact);

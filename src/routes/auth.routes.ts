@@ -277,8 +277,6 @@ router.post('/login', async (req, res) => {
       },
     });
 
-    console.log('/login sessioncreate', sessioncreate);
-
     const user = await prisma.user.findUnique({
       where: { id: userId },
     });
@@ -303,7 +301,6 @@ router.post('/login', async (req, res) => {
     return res.status(200).json({ user });
   } catch (error) {
     console.log(error);
-    console.log(error, '여기인가?');
     return res.status(401).json({ message: 'login failed', error });
   }
 });
@@ -312,15 +309,11 @@ router.post('/refresh', async (req, res) => {
   const refreshKey = req.cookies['refresh_key'];
   if (!refreshKey) return res.status(401).json({ error: 'NO_REFRESH_KEY' });
 
-  console.log('/refresh refreshKey ------------>', refreshKey);
   const hashedKey = hashRefreshToken(refreshKey);
-  console.log('/refresh hashedKey ------------>', hashedKey);
 
   const session = await prisma.refreshSession.findUnique({
     where: { sessionKey: hashedKey },
   });
-
-  console.log('prisma.refreshSession.findUnique session ------->', session);
 
   if (!session) return res.status(401).json({ error: 'CANNOT FIND SESSION' });
   if (session.revokedAt) return res.status(401).json({ error: 'REVOKED_REFRESH' });
