@@ -177,6 +177,7 @@ model Episode {
   owner       User             @relation("EpisodeOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
   date        DateTime
   title       String
+  memo        String           @default("")
   mates       EpisodeMate[]
   placeId     Int
   place       Place            @relation(fields: [placeId], references: [id])

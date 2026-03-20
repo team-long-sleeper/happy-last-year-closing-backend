@@ -14,7 +14,7 @@ const Place = z.object({
   address: z.string(),
   lat: z.number(),
   lng: z.number(),
-  url: z.string(),
+  url: z.httpUrl(),
 });
 
 const Picture = z.object({
@@ -28,6 +28,7 @@ const CreateBody = z.object({
   matesId: z.array(z.string()).default([]),
   place: Place,
   pictures: z.array(Picture).min(1).max(5),
+  memo: z.string().max(150),
 });
 
 // 들어올 때 pictures에는 새 이미지들만 들어옴
@@ -45,7 +46,7 @@ router.post('', requireAuth, async (req, res) => {
       return res.status(400).json({ message: 'Inavlid Body', errors: flattenError(parsed.error) });
     }
 
-    const { title, date, matesId, place, pictures } = parsed.data;
+    const { title, date, matesId, place, pictures, memo } = parsed.data;
 
     const uniqueMateIds = [...new Set(matesId)];
     const uniquePictureKeys = [...new Set(pictures.map((pic) => pic.key))];
@@ -95,6 +96,7 @@ router.post('', requireAuth, async (req, res) => {
         data: {
           ownerUserId,
           title,
+          memo,
           date: new Date(date),
           placeId: newPlace.id,
           mates: {
@@ -157,6 +159,7 @@ router.get('', requireAuth, async (req, res) => {
         return {
           id: ep.id,
           title: ep.title,
+          memo: ep.memo,
           date: ep.date,
           mates: ep.mates.map((m) => m.contact),
           place: ep.place,
@@ -215,6 +218,7 @@ router.get('/:id', requireAuth, async (req, res) => {
     return res.json({
       id: episode.id,
       title: episode.title,
+      memo: episode.memo,
       date: episode.date,
       pictures,
       createdAt: episode.createdAt,
@@ -252,7 +256,7 @@ router.patch('/:id', requireAuth, async (req, res) => {
     if (!parsed.success)
       return res.status(400).json({ message: 'Inavlid Body', errors: flattenError(parsed.error) });
 
-    const { title, date, matesId, place, pictures, deletedPictureId } = parsed.data;
+    const { title, date, matesId, place, pictures, deletedPictureId, memo } = parsed.data;
     const uniqueMateIds = [...new Set(matesId)];
 
     const episodeExists = await prisma.episode.findUnique({
@@ -287,6 +291,7 @@ router.patch('/:id', requireAuth, async (req, res) => {
         data: {
           ownerUserId: userId,
           title,
+          memo,
           date: new Date(date),
           placeId: placeUpdate.id,
           mates: {
