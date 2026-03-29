@@ -29,6 +29,7 @@ const CreateBody = z.object({
   place: Place,
   pictures: z.array(Picture).min(1).max(5),
   memo: z.string().max(150),
+  tags: z.array(z.number().int()).default([]),
 });
 
 // 들어올 때 pictures에는 새 이미지들만 들어옴
@@ -46,9 +47,10 @@ router.post('', requireAuth, async (req, res) => {
       return res.status(400).json({ message: 'Inavlid Body', errors: flattenError(parsed.error) });
     }
 
-    const { title, date, matesId, place, pictures, memo } = parsed.data;
+    const { title, date, matesId, place, pictures, memo, tags } = parsed.data;
 
     const uniqueMateIds = [...new Set(matesId)];
+    const uniqueTagIds = [...new Set(tags)];
     const uniquePictureKeys = [...new Set(pictures.map((pic) => pic.key))];
 
     if (uniquePictureKeys.length !== pictures.length) {
@@ -68,6 +70,19 @@ router.post('', requireAuth, async (req, res) => {
         return res
           .status(400)
           .json({ message: 'Some matesId are invalid or do not belong to this user' });
+      }
+    }
+
+    if (uniqueTagIds.length > 0) {
+      const ownedTags = await prisma.tag.findMany({
+        where: { id: { in: uniqueTagIds }, ownerUserId },
+        select: { id: true },
+      });
+
+      if (ownedTags.length !== uniqueTagIds.length) {
+        return res
+          .status(400)
+          .json({ message: 'Some tags are invalid or do not belong to this user' });
       }
     }
 
@@ -101,6 +116,9 @@ router.post('', requireAuth, async (req, res) => {
           placeId: newPlace.id,
           mates: {
             create: uniqueMateIds.map((contactId) => ({ contact: { connect: { id: contactId } } })),
+          },
+          tags: {
+            create: uniqueTagIds.map((tagId) => ({ tagId })),
           },
         },
       });
