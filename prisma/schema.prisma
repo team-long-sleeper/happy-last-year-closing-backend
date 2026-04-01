@@ -29,6 +29,7 @@ model User {
   refreshSessions RefreshSession[]
   episodes        Episode[]        @relation("EpisodeOwner")
   placeFavorites  PlaceFavorite[]
+  tags            Tag[]
 }
 
 model OAuthAccount {
@@ -140,14 +141,15 @@ enum PlaceProvider {
 }
 
 model Place {
-  id         Int      @id @default(autoincrement())
-  providerId String   @unique
-  name       String
-  address    String
-  lat        Float
-  lng        Float
-  createdAt  DateTime @default(now())
-  url        String
+  id           Int      @id @default(autoincrement())
+  providerId   String   @unique
+  name         String
+  address      String
+  lat          Float
+  lng          Float
+  createdAt    DateTime @default(now())
+  thumbnailUrl String?
+  url          String
 
   favorites PlaceFavorite[]
   episodes  Episode[]
@@ -170,6 +172,30 @@ model PlaceFavorite {
   @@index([ownerUserId, aliasName])
 }
 
+model Tag {
+  id          Int      @id @default(autoincrement())
+  ownerUserId String
+  name        String
+  color       String   @default("#F2F2F7")
+  createdAt   DateTime @default(now())
+
+  owner    User         @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  episodes EpisodeTag[]
+
+  @@unique([ownerUserId, name])
+  @@index([ownerUserId])
+}
+
+model EpisodeTag {
+  episodeId Int
+  tagId     Int
+
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  tag     Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([episodeId, tagId])
+}
+
 model Episode {
   id Int @id @default(autoincrement())
 
@@ -178,9 +204,10 @@ model Episode {
   date        DateTime
   title       String
   memo        String           @default("")
-  mates       EpisodeMate[]
   placeId     Int
   place       Place            @relation(fields: [placeId], references: [id])
+  mates       EpisodeMate[]
   pictures    EpisodePicture[]
+  tags        EpisodeTag[]
   createdAt   DateTime         @default(now())
 }
