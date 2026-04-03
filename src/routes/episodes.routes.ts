@@ -5,6 +5,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { r2, R2_BUCKET } from '../utils/r2.js';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { fetchAndUploadPlaceThumbnail } from '../utils/placeThumbnail.js';
 
 const router = express.Router();
 
@@ -17,6 +18,8 @@ const Place = z.object({
   url: z.httpUrl(),
 });
 
+type PlaceType = z.infer<typeof Place>;
+
 const Picture = z.object({
   key: z.string(),
   order: z.number(),
@@ -28,12 +31,18 @@ const CreateBody = z.object({
   matesId: z.array(z.string()).default([]),
   place: Place,
   pictures: z.array(Picture).min(1).max(5),
+  tags: z.array(z.string()).default([]),
   memo: z.string().max(150),
 });
 
-// 들어올 때 pictures에는 새 이미지들만 들어옴
+const UpdatePicture = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('new'), key: z.string(), order: z.number() }),
+  z.object({ type: z.literal('exists'), id: z.number(), order: z.number() }),
+]);
+
 const UpdateBody = CreateBody.extend({
   deletedPictureId: z.array(z.number()).optional(),
+  pictures: z.array(UpdatePicture).min(1).max(5),
 });
 
 router.post('', requireAuth, async (req, res) => {
@@ -46,7 +55,7 @@ router.post('', requireAuth, async (req, res) => {
       return res.status(400).json({ message: 'Inavlid Body', errors: flattenError(parsed.error) });
     }
 
-    const { title, date, matesId, place, pictures, memo } = parsed.data;
+    const { title, date, matesId, place, pictures, memo, tags } = parsed.data;
 
     const uniqueMateIds = [...new Set(matesId)];
     const uniquePictureKeys = [...new Set(pictures.map((pic) => pic.key))];
@@ -71,6 +80,30 @@ router.post('', requireAuth, async (req, res) => {
       }
     }
 
+    const uniqueTagLabels = [...new Set(tags)];
+
+    let thumbnailUrl: string | null = null;
+
+    const existingPlace = await prisma.place.findUnique({
+      where: { providerId: place.providerId },
+      select: { thumbnailUrl: true },
+    });
+
+    if (existingPlace) {
+      // 이미 저장된 장소 → 기존 썸네일 그대로 사용
+      thumbnailUrl = existingPlace.thumbnailUrl;
+    } else {
+      // 새 장소 → Google Places에서 썸네일 가져오기
+      thumbnailUrl = await fetchAndUploadPlaceThumbnail({
+        placeName: place.name,
+        lat: place.lat,
+        lng: place.lng,
+        providerId: place.providerId,
+      });
+    }
+
+    console.log(thumbnailUrl);
+
     const episode = await prisma.$transaction(async (tx) => {
       const newPlace = await tx.place.upsert({
         where: { providerId: place.providerId },
@@ -81,6 +114,7 @@ router.post('', requireAuth, async (req, res) => {
           lat: place.lat,
           lng: place.lng,
           url: place.url,
+          ...(thumbnailUrl !== null && { thumbnailUrl }),
         },
         create: {
           providerId: place.providerId,
@@ -89,6 +123,7 @@ router.post('', requireAuth, async (req, res) => {
           lat: place.lat,
           lng: place.lng,
           url: place.url,
+          thumbnailUrl,
         },
       });
 
@@ -104,6 +139,22 @@ router.post('', requireAuth, async (req, res) => {
           },
         },
       });
+
+      if (uniqueTagLabels.length > 0) {
+        const upsertedTags = await Promise.all(
+          uniqueTagLabels.map((label) =>
+            tx.tag.upsert({
+              where: { ownerUserId_label: { ownerUserId, label } },
+              update: {},
+              create: { label, ownerUserId },
+              select: { id: true },
+            }),
+          ),
+        );
+        await tx.episodeTag.createMany({
+          data: upsertedTags.map((t) => ({ episodeId: created.id, tagId: t.id })),
+        });
+      }
 
       await tx.episodePicture.createMany({
         data: pictures.map((p) => ({
@@ -126,13 +177,49 @@ router.post('', requireAuth, async (req, res) => {
 router.get('', requireAuth, async (req, res) => {
   try {
     const { userId: ownerUserId } = req.auth!;
+    const { startDate, endDate, contactIds, placeIds, tagIds } = req.query;
+
+    const parsedContactIds = contactIds
+      ? (contactIds as string).split(',').map((s) => s.trim())
+      : undefined;
+    const parsedPlaceIds = placeIds
+      ? (placeIds as string).split(',').map((s) => parseInt(s.trim(), 10))
+      : undefined;
+    const parsedTagIds = tagIds
+      ? (tagIds as string).split(',').map((s) => parseInt(s.trim(), 10))
+      : undefined;
 
     const episodes = await prisma.episode.findMany({
-      where: { ownerUserId },
+      where: {
+        ownerUserId,
+        ...(startDate || endDate
+          ? {
+              date: {
+                ...(startDate && { gte: new Date(startDate as string) }),
+                ...(endDate && { lte: new Date(endDate as string) }),
+              },
+            }
+          : {}),
+        ...(parsedPlaceIds?.length ? { placeId: { in: parsedPlaceIds } } : {}),
+        ...(parsedContactIds?.length
+          ? { mates: { some: { contactId: { in: parsedContactIds } } } }
+          : {}),
+        ...(parsedTagIds?.length ? { tags: { some: { tagId: { in: parsedTagIds } } } } : {}),
+      },
       orderBy: { date: 'desc' },
       include: {
         pictures: { orderBy: { order: 'asc' } },
         place: true,
+        tags: {
+          include: {
+            tag: {
+              select: {
+                color: true,
+                label: true,
+              },
+            },
+          },
+        },
         mates: {
           include: {
             contact: {
@@ -163,6 +250,9 @@ router.get('', requireAuth, async (req, res) => {
           date: ep.date,
           mates: ep.mates.map((m) => m.contact),
           place: ep.place,
+          tags: ep.tags.map((t) => {
+            return { label: t.tag.label, color: t.tag.color, id: t.tagId };
+          }),
           pictures,
         };
       }),
@@ -186,6 +276,16 @@ router.get('/:id', requireAuth, async (req, res) => {
       include: {
         pictures: { orderBy: { order: 'asc' } },
         place: { omit: { createdAt: true, id: true } },
+        tags: {
+          include: {
+            tag: {
+              select: {
+                label: true,
+                color: true,
+              },
+            },
+          },
+        },
         mates: {
           include: {
             contact: {
@@ -224,6 +324,9 @@ router.get('/:id', requireAuth, async (req, res) => {
       createdAt: episode.createdAt,
       mates: episode.mates.map((m) => m.contact),
       place: episode.place,
+      tags: episode.tags.map((t) => {
+        return { label: t.tag.label, color: t.tag.color, id: t.tagId };
+      }),
     });
   } catch (error) {
     console.log(error);
@@ -256,8 +359,9 @@ router.patch('/:id', requireAuth, async (req, res) => {
     if (!parsed.success)
       return res.status(400).json({ message: 'Inavlid Body', errors: flattenError(parsed.error) });
 
-    const { title, date, matesId, place, pictures, deletedPictureId, memo } = parsed.data;
+    const { title, date, matesId, place, pictures, deletedPictureId, memo, tags } = parsed.data;
     const uniqueMateIds = [...new Set(matesId)];
+    const uniqueTagLabels = [...new Set(tags)];
 
     const episodeExists = await prisma.episode.findUnique({
       where: { ownerUserId: userId, id: episodeId },
@@ -265,6 +369,26 @@ router.patch('/:id', requireAuth, async (req, res) => {
 
     if (!episodeExists)
       return res.status(404).json({ message: '해당하는 에피소드가 존재하지 않습니다.' });
+
+    let thumbnailUrl: string | null = null;
+
+    const existingPlace = await prisma.place.findUnique({
+      where: { providerId: place.providerId },
+      select: { thumbnailUrl: true },
+    });
+
+    if (existingPlace) {
+      // 이미 저장된 장소 → 기존 썸네일 그대로 사용
+      thumbnailUrl = existingPlace.thumbnailUrl;
+    } else {
+      // 새 장소 → Google Places에서 썸네일 가져오기
+      thumbnailUrl = await fetchAndUploadPlaceThumbnail({
+        placeName: place.name,
+        lat: place.lat,
+        lng: place.lng,
+        providerId: place.providerId,
+      });
+    }
 
     const updateEpisode = await prisma.$transaction(async (tx) => {
       const placeUpdate = await tx.place.upsert({
@@ -275,6 +399,7 @@ router.patch('/:id', requireAuth, async (req, res) => {
           lat: place.lat,
           lng: place.lng,
           url: place.url,
+          ...(thumbnailUrl !== null && { thumbnailUrl }),
         },
         create: {
           providerId: place.providerId,
@@ -283,6 +408,7 @@ router.patch('/:id', requireAuth, async (req, res) => {
           lat: place.lat,
           lng: place.lng,
           url: place.url,
+          thumbnailUrl,
         },
       });
 
@@ -302,17 +428,36 @@ router.patch('/:id', requireAuth, async (req, res) => {
         },
       });
 
+      await tx.episodeTag.deleteMany({ where: { episodeId } });
+      if (uniqueTagLabels.length > 0) {
+        const upsertedTags = await Promise.all(
+          uniqueTagLabels.map((label) =>
+            tx.tag.upsert({
+              where: { ownerUserId_label: { ownerUserId: userId, label } },
+              update: {},
+              create: { label, ownerUserId: userId },
+              select: { id: true },
+            }),
+          ),
+        );
+        await tx.episodeTag.createMany({
+          data: upsertedTags.map((t) => ({ episodeId, tagId: t.id })),
+        });
+      }
+
       if (deletedPictureId)
         await tx.episodePicture.deleteMany({
           where: { id: { in: deletedPictureId } },
         });
 
       await tx.episodePicture.createMany({
-        data: pictures.map((pic) => ({
-          episodeId: episode.id,
-          key: pic.key,
-          order: pic.order,
-        })),
+        data: pictures
+          .filter((pic) => pic.type === 'new')
+          .map((pic) => ({
+            episodeId: episode.id,
+            key: pic.key,
+            order: pic.order,
+          })),
       });
 
       return episode;

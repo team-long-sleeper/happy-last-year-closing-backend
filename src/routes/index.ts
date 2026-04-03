@@ -5,6 +5,8 @@ import userRoutes from './user.routes.js';
 import friendsRoutes from './friends.routes.js';
 import episodesRoutes from './episodes.routes.js';
 import uploadsRoutes from './uploads.routes.js';
+import staticsRoutes from './stats.route.js';
+import tagsRoutes from './tags.route.js';
 
 export const routes = Router();
 
@@ -22,3 +24,5 @@ routes.use('/user', userRoutes);
 routes.use('/friends', friendsRoutes);
 routes.use('/episodes', episodesRoutes);
 routes.use('/uploads', uploadsRoutes);
+routes.use('/tags', tagsRoutes);
+routes.use('/statics', staticsRoutes);
