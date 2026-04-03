@@ -31,7 +31,7 @@ const CreateBody = z.object({
   matesId: z.array(z.string()).default([]),
   place: Place,
   pictures: z.array(Picture).min(1).max(5),
-  tags: z.array(z.number()).default([]),
+  tags: z.array(z.string()).default([]),
   memo: z.string().max(150),
 });
 
@@ -40,7 +40,6 @@ const UpdatePicture = z.discriminatedUnion('type', [
   z.object({ type: z.literal('exists'), id: z.number(), order: z.number() }),
 ]);
 
-// 들어올 때 pictures에는 새 이미지들만 들어옴
 const UpdateBody = CreateBody.extend({
   deletedPictureId: z.array(z.number()).optional(),
   pictures: z.array(UpdatePicture).min(1).max(5),
@@ -81,20 +80,7 @@ router.post('', requireAuth, async (req, res) => {
       }
     }
 
-    const uniqueTagIds = [...new Set(tags)];
-
-    if (uniqueTagIds.length > 0) {
-      const ownedTags = await prisma.tag.findMany({
-        where: { id: { in: uniqueTagIds }, ownerUserId },
-        select: { id: true },
-      });
-
-      if (ownedTags.length !== uniqueTagIds.length) {
-        return res
-          .status(400)
-          .json({ message: 'Some tags are invalid or do not belong to this user' });
-      }
-    }
+    const uniqueTagLabels = [...new Set(tags)];
 
     let thumbnailUrl: string | null = null;
 
@@ -154,9 +140,19 @@ router.post('', requireAuth, async (req, res) => {
         },
       });
 
-      if (uniqueTagIds.length > 0) {
+      if (uniqueTagLabels.length > 0) {
+        const upsertedTags = await Promise.all(
+          uniqueTagLabels.map((label) =>
+            tx.tag.upsert({
+              where: { ownerUserId_label: { ownerUserId, label } },
+              update: {},
+              create: { label, ownerUserId },
+              select: { id: true },
+            }),
+          ),
+        );
         await tx.episodeTag.createMany({
-          data: uniqueTagIds.map((tagId) => ({ episodeId: created.id, tagId })),
+          data: upsertedTags.map((t) => ({ episodeId: created.id, tagId: t.id })),
         });
       }
 
@@ -214,6 +210,16 @@ router.get('', requireAuth, async (req, res) => {
       include: {
         pictures: { orderBy: { order: 'asc' } },
         place: true,
+        tags: {
+          include: {
+            tag: {
+              select: {
+                color: true,
+                label: true,
+              },
+            },
+          },
+        },
         mates: {
           include: {
             contact: {
@@ -244,6 +250,9 @@ router.get('', requireAuth, async (req, res) => {
           date: ep.date,
           mates: ep.mates.map((m) => m.contact),
           place: ep.place,
+          tags: ep.tags.map((t) => {
+            return { label: t.tag.label, color: t.tag.color, id: t.tagId };
+          }),
           pictures,
         };
       }),
@@ -267,6 +276,16 @@ router.get('/:id', requireAuth, async (req, res) => {
       include: {
         pictures: { orderBy: { order: 'asc' } },
         place: { omit: { createdAt: true, id: true } },
+        tags: {
+          include: {
+            tag: {
+              select: {
+                label: true,
+                color: true,
+              },
+            },
+          },
+        },
         mates: {
           include: {
             contact: {
@@ -305,6 +324,9 @@ router.get('/:id', requireAuth, async (req, res) => {
       createdAt: episode.createdAt,
       mates: episode.mates.map((m) => m.contact),
       place: episode.place,
+      tags: episode.tags.map((t) => {
+        return { label: t.tag.label, color: t.tag.color, id: t.tagId };
+      }),
     });
   } catch (error) {
     console.log(error);
@@ -339,20 +361,7 @@ router.patch('/:id', requireAuth, async (req, res) => {
 
     const { title, date, matesId, place, pictures, deletedPictureId, memo, tags } = parsed.data;
     const uniqueMateIds = [...new Set(matesId)];
-    const uniqueTagIds = [...new Set(tags)];
-
-    if (uniqueTagIds.length > 0) {
-      const ownedTags = await prisma.tag.findMany({
-        where: { id: { in: uniqueTagIds }, ownerUserId: userId },
-        select: { id: true },
-      });
-
-      if (ownedTags.length !== uniqueTagIds.length) {
-        return res
-          .status(400)
-          .json({ message: 'Some tags are invalid or do not belong to this user' });
-      }
-    }
+    const uniqueTagLabels = [...new Set(tags)];
 
     const episodeExists = await prisma.episode.findUnique({
       where: { ownerUserId: userId, id: episodeId },
@@ -420,9 +429,19 @@ router.patch('/:id', requireAuth, async (req, res) => {
       });
 
       await tx.episodeTag.deleteMany({ where: { episodeId } });
-      if (uniqueTagIds.length > 0) {
+      if (uniqueTagLabels.length > 0) {
+        const upsertedTags = await Promise.all(
+          uniqueTagLabels.map((label) =>
+            tx.tag.upsert({
+              where: { ownerUserId_label: { ownerUserId: userId, label } },
+              update: {},
+              create: { label, ownerUserId: userId },
+              select: { id: true },
+            }),
+          ),
+        );
         await tx.episodeTag.createMany({
-          data: uniqueTagIds.map((tagId) => ({ episodeId, tagId })),
+          data: upsertedTags.map((t) => ({ episodeId, tagId: t.id })),
         });
       }
 

@@ -175,14 +175,14 @@ model PlaceFavorite {
 model Tag {
   id          Int      @id @default(autoincrement())
   ownerUserId String
-  name        String
+  label       String
   color       String   @default("#F2F2F7")
   createdAt   DateTime @default(now())
 
   owner    User         @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
   episodes EpisodeTag[]
 
-  @@unique([ownerUserId, name])
+  @@unique([ownerUserId, label])
   @@index([ownerUserId])
 }
 

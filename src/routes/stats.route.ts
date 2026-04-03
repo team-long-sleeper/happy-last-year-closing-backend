@@ -119,7 +119,7 @@ router.get('', requireAuth, async (req, res) => {
     });
     const topTagsRaw = await prisma.tag.findMany({
       where: { id: { in: topTagRows.map((r) => r.tagId) } },
-      select: { id: true, name: true },
+      select: { id: true, label: true },
     });
     const tagCountMap = new Map(topTagRows.map((r) => [r.tagId, r._count.episodeId]));
     const tagMap = new Map(topTagsRaw.map((t) => [t.id, t]));

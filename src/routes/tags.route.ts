@@ -12,7 +12,7 @@ router.get('', requireAuth, async (req, res) => {
       orderBy: { createdAt: 'asc' },
       select: {
         id: true,
-        name: true,
+        label: true,
         color: true,
         _count: { select: { episodes: true } },
       },
@@ -27,15 +27,17 @@ router.get('', requireAuth, async (req, res) => {
 // POST /tags — create a new tag
 router.post('', requireAuth, async (req, res) => {
   try {
-    const { name, color } = req.body as { name: string; color?: string };
+    const { label, color } = req.body as { label: string; color?: string };
 
-    if (!name) {
-      return res.status(400).json({ message: 'name is required' });
+    console.log(label, color);
+
+    if (!label) {
+      return res.status(400).json({ message: 'label is required' });
     }
 
     const tag = await prisma.tag.create({
       data: {
-        name: name.trim(),
+        label: label.trim(),
         ...(color !== undefined && { color }),
         owner: { connect: { id: req.auth!.userId } },
       },
@@ -44,7 +46,7 @@ router.post('', requireAuth, async (req, res) => {
     return res.status(201).json(tag);
   } catch (error: any) {
     if (error.code === 'P2002') {
-      return res.status(409).json({ message: 'Tag name already exists' });
+      return res.status(409).json({ message: 'Tag label already exists' });
     }
     console.log(error);
   }
@@ -54,7 +56,7 @@ router.post('', requireAuth, async (req, res) => {
 router.patch('/:id', requireAuth, async (req, res) => {
   try {
     const tagId = Number(req.params.id);
-    const { name, color } = req.body as { name?: string; color?: string };
+    const { label, color } = req.body as { label?: string; color?: string };
 
     const existing = await prisma.tag.findFirst({
       where: { id: tagId, ownerUserId: req.auth!.userId },
@@ -66,7 +68,7 @@ router.patch('/:id', requireAuth, async (req, res) => {
     const updated = await prisma.tag.update({
       where: { id: tagId },
       data: {
-        ...(name && { name: name.trim() }),
+        ...(label && { label: label.trim() }),
         ...(color !== undefined && { color }),
       },
     });
@@ -74,7 +76,7 @@ router.patch('/:id', requireAuth, async (req, res) => {
     return res.status(200).json(updated);
   } catch (error: any) {
     if (error.code === 'P2002') {
-      return res.status(409).json({ message: 'Tag name already exists' });
+      return res.status(409).json({ message: 'Tag label already exists' });
     }
     console.log(error);
   }
@@ -99,6 +101,5 @@ router.delete('/:id', requireAuth, async (req, res) => {
     console.log(error);
   }
 });
-
 
 export default router;
