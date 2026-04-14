@@ -1,14 +1,20 @@
 import express from 'express';
-import z, { flattenError } from 'zod';
+import multer from 'multer';
+import crypto from 'node:crypto';
 import { requireAuth } from '../middleware/auth.js';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { r2, R2_BUCKET } from '../utils/r2.js';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { encryptBuffer } from '../lib/security/crypto.js';
 
 const router = express.Router();
 
-const Body = z.object({
-  mimeTypes: z.array(z.string().min(3)).min(1).max(50),
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
+  fileFilter: (_req: Express.Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
+    cb(null, allowed.includes(file.mimetype));
+  },
 });
 
 function extFromMime(mime: string) {
@@ -26,38 +32,42 @@ function extFromMime(mime: string) {
   }
 }
 
-router.post('/presign', requireAuth, async (req, res) => {
+// POST /uploads/pictures
+// multipart/form-data, field name: "files" (최대 5장)
+// response: { uploads: [{ key, iv }] }
+router.post('/pictures', requireAuth, upload.array('files', 5), async (req, res) => {
   try {
     const ownerUserId = req.auth!.userId;
-    const parsed = Body.safeParse(req.body);
+    const files = req.files as Express.Multer.File[];
 
-    if (!parsed.success) {
-      return res.status(400).json({ message: 'Invalid body', errors: flattenError(parsed.error) });
+    if (!files || files.length === 0) {
+      return res.status(400).json({ message: 'No files uploaded' });
     }
-
-    const { mimeTypes } = parsed.data;
 
     const prefix = `private/episodes/${ownerUserId}/${Date.now()}`;
 
     const uploads = await Promise.all(
-      mimeTypes.map(async (mimeType) => {
-        const key = `${prefix}/${crypto.randomUUID()}.${extFromMime(mimeType)}`;
+      files.map(async (file) => {
+        const key = `${prefix}/${crypto.randomUUID()}.${extFromMime(file.mimetype)}`;
+        const { encrypted, iv } = encryptBuffer(file.buffer);
 
-        const cmd = new PutObjectCommand({
-          Bucket: R2_BUCKET,
-          Key: key,
-          ContentType: mimeType,
-        });
+        await r2.send(
+          new PutObjectCommand({
+            Bucket: R2_BUCKET,
+            Key: key,
+            Body: encrypted,
+            ContentType: 'application/octet-stream',
+          }),
+        );
 
-        const uploadUrl = await getSignedUrl(r2, cmd, { expiresIn: 60 * 10 }); //10분
-
-        return { key, uploadUrl, mimeType };
+        return { key, iv };
       }),
     );
 
     return res.json({ uploads });
   } catch (error) {
-    console.log(error);
+    console.error(error);
+    return res.status(500).json({ message: 'Internal server error' });
   }
 });
 
