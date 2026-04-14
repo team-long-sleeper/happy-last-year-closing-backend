@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { Pool } from 'pg';
+import { prisma } from '@lib/prisma.js';
 import authRoutes from './auth.routes.js';
 import userRoutes from './user.routes.js';
 import friendsRoutes from './friends.routes.js';
@@ -10,13 +10,9 @@ import tagsRoutes from './tags.route.js';
 
 export const routes = Router();
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
-
 routes.get('/health', async (_req, res) => {
-  const r = await pool.query('select now() as now');
-  res.json({ ok: true, dbTime: r.rows[0].now });
+  const [row] = await prisma.$queryRaw<[{ now: Date }]>`SELECT now() AS now`;
+  res.json({ ok: true, dbTime: row.now });
 });
 
 routes.use('/auth', authRoutes);
