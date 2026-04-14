@@ -72,8 +72,6 @@ async function saveKakaoTokens(
 
   const expiresAt = new Date(Date.now() + token.expires_in * 1000);
 
-  console.log('kakao token set', token.expires_in);
-
   await tx.oAuthAccount.upsert({
     where: {
       provider_providerUserId: {
@@ -202,8 +200,6 @@ router.post('/signin', async (req, res) => {
         });
       });
 
-      console.log('기존 유저 로그인 완료 ✔️');
-
       return res.status(200).json({
         user: { id: userExists.userId },
       });
@@ -245,12 +241,10 @@ router.post('/signin', async (req, res) => {
       return { newUser: createdUser };
     });
 
-    console.log('신규 유저 로그인 완료 ✔️');
-
     return res.status(200).json({ user: { id: newUser.id } });
   } catch (error) {
-    console.log(error);
-    return res.status(401).json({ message: 'login failed', error });
+    console.error(error);
+    return res.status(401).json({ message: 'login failed' });
   }
 });
 
@@ -300,8 +294,8 @@ router.post('/login', async (req, res) => {
 
     return res.status(200).json({ user });
   } catch (error) {
-    console.log(error);
-    return res.status(401).json({ message: 'login failed', error });
+    console.error(error);
+    return res.status(401).json({ message: 'login failed' });
   }
 });
 

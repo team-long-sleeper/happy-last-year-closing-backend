@@ -124,9 +124,10 @@ model RefreshSession {
 }
 
 model EpisodePicture {
-  id        Int    @id @default(autoincrement())
+  id        Int     @id @default(autoincrement())
   episodeId Int
   key       String
+  iv        String?
   order     Int
 
   episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)

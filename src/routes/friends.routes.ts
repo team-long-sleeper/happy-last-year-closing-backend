@@ -1,13 +1,17 @@
 import { prisma } from '@lib/prisma.js';
 import express from 'express';
+import { z, flattenError } from 'zod';
 import { requireAuth } from '../middleware/auth.js';
 import { pickRandomDefaultProfileImage } from '../utils/defaultProfileImage.js';
+
+const CreateContactBody = z.object({
+  name: z.string().min(1).max(50),
+});
 
 const router = express.Router();
 
 router.get('', requireAuth, async (req, res) => {
   try {
-    console.log(req.headers, 'request headers');
     const contacts = await prisma.contact.findMany({
       where: { ownerUserId: req.auth!.userId },
       orderBy: { createdAt: 'desc' },
@@ -36,15 +40,21 @@ router.get('', requireAuth, async (req, res) => {
       social: c.linkedUser ? c.linkedUser.oauthAccounts.map((p) => p.provider) : null,
     }));
 
-    return res.status(201).json(dataResult);
+    return res.status(200).json(dataResult);
   } catch (error) {
-    console.log(error);
+    console.error(error);
+    return res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 router.post('', requireAuth, async (req, res) => {
   try {
-    const { name } = req.body as { name: string };
+    const parsed = CreateContactBody.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: 'Invalid Body', errors: flattenError(parsed.error) });
+    }
+
+    const { name } = parsed.data;
 
     const newContact = await prisma.contact.create({
       data: {
@@ -56,7 +66,8 @@ router.post('', requireAuth, async (req, res) => {
 
     return res.status(201).json(newContact);
   } catch (error) {
-    console.log(error);
+    console.error(error);
+    return res.status(500).json({ message: 'Internal server error' });
   }
 });
 

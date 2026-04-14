@@ -20,7 +20,8 @@ router.get('', requireAuth, async (req, res) => {
 
     return res.status(200).json(tags);
   } catch (error) {
-    console.log(error);
+    console.error(error);
+    return res.status(500).json({ message: 'Internal server error' });
   }
 });
 
@@ -28,8 +29,6 @@ router.get('', requireAuth, async (req, res) => {
 router.post('', requireAuth, async (req, res) => {
   try {
     const { label, color } = req.body as { label: string; color?: string };
-
-    console.log(label, color);
 
     if (!label) {
       return res.status(400).json({ message: 'label is required' });
@@ -48,7 +47,8 @@ router.post('', requireAuth, async (req, res) => {
     if (error.code === 'P2002') {
       return res.status(409).json({ message: 'Tag label already exists' });
     }
-    console.log(error);
+    console.error(error);
+    return res.status(500).json({ message: 'Internal server error' });
   }
 });
 
@@ -56,6 +56,7 @@ router.post('', requireAuth, async (req, res) => {
 router.patch('/:id', requireAuth, async (req, res) => {
   try {
     const tagId = Number(req.params.id);
+    if (!Number.isInteger(tagId)) return res.status(400).json({ message: 'Invalid Id' });
     const { label, color } = req.body as { label?: string; color?: string };
 
     const existing = await prisma.tag.findFirst({
@@ -78,7 +79,8 @@ router.patch('/:id', requireAuth, async (req, res) => {
     if (error.code === 'P2002') {
       return res.status(409).json({ message: 'Tag label already exists' });
     }
-    console.log(error);
+    console.error(error);
+    return res.status(500).json({ message: 'Internal server error' });
   }
 });
 
@@ -86,6 +88,7 @@ router.patch('/:id', requireAuth, async (req, res) => {
 router.delete('/:id', requireAuth, async (req, res) => {
   try {
     const tagId = Number(req.params.id);
+    if (!Number.isInteger(tagId)) return res.status(400).json({ message: 'Invalid Id' });
 
     const existing = await prisma.tag.findFirst({
       where: { id: tagId, ownerUserId: req.auth!.userId },
@@ -98,7 +101,8 @@ router.delete('/:id', requireAuth, async (req, res) => {
 
     return res.status(204).send();
   } catch (error) {
-    console.log(error);
+    console.error(error);
+    return res.status(500).json({ message: 'Internal server error' });
   }
 });
 

@@ -1,9 +1,7 @@
 import { prisma } from '@lib/prisma.js';
 import express from 'express';
 import { requireAuth } from '../middleware/auth.js';
-import { GetObjectCommand } from '@aws-sdk/client-s3';
-import { r2, R2_BUCKET } from '../utils/r2.js';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { episodePictureUrl } from '../constants/paths.js';
 
 const router = express.Router();
 
@@ -125,8 +123,8 @@ router.get('', requireAuth, async (req, res) => {
     const tagMap = new Map(topTagsRaw.map((t) => [t.id, t]));
     const topTags = topTagRows.map((r) => tagMap.get(r.tagId)!).filter(Boolean);
 
-    // 각 태그의 가장 최신 에피소드의 첫 번째 이미지
-    const tagThumbnailMap = new Map<number, string | null>();
+    // 각 태그의 가장 최신 에피소드의 첫 번째 이미지 (복호화 프록시 URL 사용)
+    const tagThumbnailMap = new Map<number, { id: number; order: number; url: string } | null>();
     await Promise.all(
       topTagRows.map(async (r) => {
         const latestEpisodeTag = await prisma.episodeTag.findFirst({
@@ -141,12 +139,12 @@ router.get('', requireAuth, async (req, res) => {
           },
         });
         const picture = latestEpisodeTag?.episode.pictures[0];
-        if (picture) {
-          const cmd = new GetObjectCommand({ Bucket: R2_BUCKET, Key: picture.key });
-          tagThumbnailMap.set(r.tagId, await getSignedUrl(r2, cmd, { expiresIn: 60 * 5 }));
-        } else {
-          tagThumbnailMap.set(r.tagId, null);
-        }
+        tagThumbnailMap.set(
+          r.tagId,
+          picture
+            ? { id: picture.id, order: picture.order, url: episodePictureUrl(picture.id) }
+            : null,
+        );
       }),
     );
 
@@ -168,11 +166,12 @@ router.get('', requireAuth, async (req, res) => {
       topTags: topTags.map((t) => ({
         tag: t,
         episodeCount: tagCountMap.get(t.id) ?? 0,
-        thumbnailUrl: tagThumbnailMap.get(t.id) ?? null,
+        thumbnail: tagThumbnailMap.get(t.id) ?? null,
       })),
     });
   } catch (error) {
-    console.log(error);
+    console.error(error);
+    return res.status(500).json({ message: 'Internal server error' });
   }
 });
 
