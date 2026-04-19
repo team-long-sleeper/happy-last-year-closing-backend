@@ -6,6 +6,8 @@ import crypto from 'node:crypto';
 import { pickRandomDefaultProfileImage } from '../utils/defaultProfileImage.js';
 import { encryptString } from '@lib/security/crypto.js';
 import { OAuthProvider } from '../generated/prisma/enums.js';
+import * as Sentry from '@sentry/node';
+import { AuthError, NotFoundError } from '@lib/errors.js';
 import type { TransactionClient } from '../generated/prisma/internal/prismaNamespace.js';
 
 const router = express.Router();
@@ -275,6 +277,8 @@ router.post('/login', async (req, res) => {
       where: { id: userId },
     });
 
+    if (!user) throw new AuthError('User not found', 'USER_NOT_FOUND');
+
     // access token도 해시화 해야하는거 아닌가?
     res.cookie('access_token', accessToken, {
       maxAge: ACCESS_TTL_SECONDS * 1000,
@@ -294,8 +298,12 @@ router.post('/login', async (req, res) => {
 
     return res.status(200).json({ user });
   } catch (error) {
-    console.error(error);
-    return res.status(401).json({ message: 'login failed' });
+    if (error instanceof AuthError) {
+      return res.status(401).json({ message: error.message });
+    }
+    // 예상 못한 에러 (DB, 외부 API 등)만 Sentry로
+    Sentry.captureException(error, { tags: { feature: 'login' } });
+    return res.status(500).json({ message: 'login failed' });
   }
 });
 

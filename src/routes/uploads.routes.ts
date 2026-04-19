@@ -36,39 +36,34 @@ function extFromMime(mime: string) {
 // multipart/form-data, field name: "files" (최대 5장)
 // response: { uploads: [{ key, iv }] }
 router.post('/pictures', requireAuth, upload.array('files', 5), async (req, res) => {
-  try {
-    const ownerUserId = req.auth!.userId;
-    const files = req.files as Express.Multer.File[];
+  const ownerUserId = req.auth!.userId;
+  const files = req.files as Express.Multer.File[];
 
-    if (!files || files.length === 0) {
-      return res.status(400).json({ message: 'No files uploaded' });
-    }
-
-    const prefix = `private/episodes/${ownerUserId}/${Date.now()}`;
-
-    const uploads = await Promise.all(
-      files.map(async (file) => {
-        const key = `${prefix}/${crypto.randomUUID()}.${extFromMime(file.mimetype)}`;
-        const { encrypted, iv } = encryptBuffer(file.buffer);
-
-        await r2.send(
-          new PutObjectCommand({
-            Bucket: R2_BUCKET,
-            Key: key,
-            Body: encrypted,
-            ContentType: 'application/octet-stream',
-          }),
-        );
-
-        return { key, iv };
-      }),
-    );
-
-    return res.json({ uploads });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ message: 'Internal server error' });
+  if (!files || files.length === 0) {
+    return res.status(400).json({ message: 'No files uploaded' });
   }
+
+  const prefix = `private/episodes/${ownerUserId}/${Date.now()}`;
+
+  const uploads = await Promise.all(
+    files.map(async (file) => {
+      const key = `${prefix}/${crypto.randomUUID()}.${extFromMime(file.mimetype)}`;
+      const { encrypted, iv } = encryptBuffer(file.buffer);
+
+      await r2.send(
+        new PutObjectCommand({
+          Bucket: R2_BUCKET,
+          Key: key,
+          Body: encrypted,
+          ContentType: 'application/octet-stream',
+        }),
+      );
+
+      return { key, iv };
+    }),
+  );
+
+  return res.json({ uploads });
 });
 
 export default router;
