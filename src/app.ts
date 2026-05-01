@@ -2,6 +2,7 @@ import cookieParser from 'cookie-parser';
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import * as Sentry from '@sentry/node';
 import { routes } from './routes/index.js';
 import { AppError } from './lib/errors.js';
@@ -11,6 +12,34 @@ import { AppError } from './lib/errors.js';
 // 미들웨어 붙이기, 라우터 마운트, 에러 핸들러 붙이기
 
 const app = express();
+
+// 로그인·가입 등 인증 엔드포인트: IP당 15분에 10회
+// 브루트포스, 크리덴셜 스터핑 방어
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { message: 'Too many requests, please try again later.', code: 'RATE_LIMITED' },
+});
+
+// 사진 업로드: IP당 1분에 20회 (5장 * 4번 업로드 정도면 충분)
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 20,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { message: 'Too many upload requests.', code: 'RATE_LIMITED' },
+});
+
+// 일반 API: IP당 1분에 120회
+const generalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { message: 'Too many requests, please try again later.', code: 'RATE_LIMITED' },
+});
 
 app.use(helmet());
 app.use(express.json());
@@ -22,6 +51,12 @@ app.use(
     credentials: true,
   }),
 );
+
+app.use('/api/auth/signin', authLimiter);
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/refresh', authLimiter);
+app.use('/api/uploads', uploadLimiter);
+app.use('/api', generalLimiter);
 
 app.use(routes);
 
