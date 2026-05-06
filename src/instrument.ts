@@ -1,6 +1,5 @@
 import * as Sentry from '@sentry/node';
 import { nodeProfilingIntegration } from '@sentry/profiling-node';
-import 'dotenv/config';
 
 // Sentry는 다른 어떤 모듈보다 먼저 init 되어야 한다.
 // (server.ts 최상단에서 이 파일을 import 할 것)

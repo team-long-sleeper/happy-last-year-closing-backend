@@ -469,8 +469,6 @@ router.post('/restore-account', async (req, res, next) => {
   try {
     const { restoreToken } = req.body as { restoreToken?: string };
 
-    console.log(restoreToken, 'restore-token');
-
     if (!restoreToken || typeof restoreToken !== 'string') {
       throw new AppError('restoreToken is required', 400, 'INVALID_INPUT');
     }
@@ -510,7 +508,6 @@ router.post('/restore-account', async (req, res, next) => {
       where: { id: account.userId },
       data: { deletedAt: null, lastLoginAt: new Date() },
     });
-    console.log('[restore] update done, sending 204');
 
     return res.status(204).send();
   } catch (err) {
@@ -522,7 +519,6 @@ router.post('/expunge-account', async (req, res, next) => {
   try {
     const { restoreToken } = req.body as { restoreToken?: string };
 
-    console.log(restoreToken);
     if (!restoreToken || typeof restoreToken !== 'string') {
       throw new AppError('restoreToken is required', 400, 'INVALID_INPUT');
     }

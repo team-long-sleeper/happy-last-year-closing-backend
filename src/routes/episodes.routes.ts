@@ -53,7 +53,7 @@ router.post('', requireAuth, async (req, res) => {
   const parsed = CreateBody.safeParse(req.body);
 
   if (!parsed.success) {
-    return res.status(400).json({ message: 'Inavlid Body', errors: flattenError(parsed.error) });
+    return res.status(400).json({ message: 'Invalid Body', errors: flattenError(parsed.error) });
   }
 
   const { title, date, matesId, place, pictures, memo, tags } = parsed.data;
@@ -382,7 +382,7 @@ router.patch('/:id', requireAuth, async (req, res) => {
   const parsed = UpdateBody.safeParse(req.body);
 
   if (!parsed.success)
-    return res.status(400).json({ message: 'Inavlid Body', errors: flattenError(parsed.error) });
+    return res.status(400).json({ message: 'Invalid Body', errors: flattenError(parsed.error) });
 
   const { title, date, matesId, place, pictures, deletedPictureId, memo, tags } = parsed.data;
   const uniqueMateIds = [...new Set(matesId)];

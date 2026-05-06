@@ -22,8 +22,6 @@ export function encryptString(plain: string): string {
   const cipherText = Buffer.concat([cipher.update(plain, 'utf-8'), cipher.final()]);
   const tag = cipher.getAuthTag();
 
-  // 저장하기 쉬운 포맷: base64(iv).base64(tag).base64(ciphertext)
-  // note 이 포맷이 뭔데 저장하기 쉽다는건데 ㅠㅠ ㅋㅋ
   return `${iv.toString('base64')}.${tag.toString('base64')}.${cipherText.toString('base64')}`;
 }
 
