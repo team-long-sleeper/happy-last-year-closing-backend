@@ -1,14 +1,6 @@
 services:
-  db:
-    image: postgres:16
-    environment:
-      POSTGRES_USER: app
-      POSTGRES_PASSWORD: apppw
-      POSTGRES_DB: appdb
+  app:
+    build: .
     ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-
-volumes:
-  pgdata:
+      - "4000:4000"
+    restart: unless-stopped

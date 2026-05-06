@@ -20,6 +20,7 @@ model User {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   lastLoginAt   DateTime
+  deletedAt     DateTime?
   oauthAccounts OAuthAccount[]
 
   contacts        Contact[]        @relation("OwnerContacts")
@@ -27,6 +28,9 @@ model User {
   friends         Friendship[]     @relation("UserFriends")
   friendOf        Friendship[]     @relation("FriendOf")
   refreshSessions RefreshSession[]
+  episodes        Episode[]        @relation("EpisodeOwner")
+  placeFavorites  PlaceFavorite[]
+  tags            Tag[]
 }
 
 model OAuthAccount {
@@ -56,12 +60,24 @@ model Contact {
   providerUserId String?
   linkedUserId   String?
   createdAt      DateTime       @default(now())
+  profileImage   String?
 
-  owner User @relation("OwnerContacts", fields: [ownerUserId], references: [id], onDelete: Cascade)
-
+  owner      User  @relation("OwnerContacts", fields: [ownerUserId], references: [id], onDelete: Cascade)
   linkedUser User? @relation("LinkedUser", fields: [linkedUserId], references: [id])
 
+  episodes EpisodeMate[]
+
   @@unique([ownerUserId, provider, providerUserId])
+}
+
+model EpisodeMate {
+  episodeId Int
+  contactId String
+
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@id([episodeId, contactId])
 }
 
 model Friendship {
@@ -106,4 +122,114 @@ model RefreshSession {
   @@unique([tokenHash])
   @@unique([sessionKey])
   @@index([userId]) // note 이게 무슨 뜻이지
+}
+
+model EpisodePicture {
+  id        Int     @id @default(autoincrement())
+  episodeId Int
+  key       String
+  iv        String?
+  order     Int
+
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@unique([episodeId, order])
+  @@index([episodeId])
+}
+
+enum PlaceProvider {
+  KAKAO
+  NAVER
+}
+
+model Place {
+  id           Int      @id @default(autoincrement())
+  providerId   String   @unique
+  name         String
+  address      String
+  lat          Float
+  lng          Float
+  createdAt    DateTime @default(now())
+  thumbnailUrl String?
+  url          String
+
+  favorites PlaceFavorite[]
+  episodes  Episode[]
+
+  @@index([lat, lng])
+}
+
+model PlaceFavorite {
+  id          Int    @id @default(autoincrement())
+  placeId     Int
+  ownerUserId String
+
+  aliasName String
+  createdAt DateTime @default(now())
+
+  owner User  @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  place Place @relation(fields: [placeId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerUserId, placeId])
+  @@index([ownerUserId, aliasName])
+}
+
+model Tag {
+  id          Int      @id @default(autoincrement())
+  ownerUserId String
+  label       String
+  color       String   @default("#F2F2F7")
+  createdAt   DateTime @default(now())
+
+  owner    User         @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  episodes EpisodeTag[]
+
+  @@unique([ownerUserId, label])
+  @@index([ownerUserId])
+}
+
+model EpisodeTag {
+  episodeId Int
+  tagId     Int
+
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  tag     Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([episodeId, tagId])
+}
+
+// 계정 영구 삭제 후 부정 이용 방지를 위해 1년간 보존하는 최소 감사 로그.
+// 개인을 직접 식별할 수 있는 정보(이름, 이메일, 에피소드 등)는 일절 포함하지 않으며,
+// 모든 식별자는 단방향 SHA-256 해시로만 보관한다.
+model AbandonedAccount {
+  id               String        @id @default(uuid())
+  // SHA-256(provider + ":" + providerUserId) — 동일 소셜 계정의 반복 재가입 탐지용
+  providerIdHash   String
+  provider         OAuthProvider
+  accountCreatedAt DateTime      // 원계정 생성일
+  abandonedAt      DateTime      @default(now()) // 하드 딜리트 시각
+  lastKnownIpHash  String?       // SHA-256(마지막 접속 IP), IP 없으면 null
+  uniqueIpCount    Int           @default(0) // 사용한 고유 IP 수 (다중 IP 부정이용 시그널)
+  sessionCount     Int           @default(0) // 총 세션 수 (활동 규모 시그널)
+  violationNote    String?       // 관리자가 기재하는 약관 위반 사유
+  retainUntil      DateTime      // 보존 기한 (abandonedAt + 1년), 이후 cron으로 파기
+
+  @@index([providerIdHash]) // 재가입 시도 빠른 조회
+  @@index([retainUntil])    // 만료된 레코드 정기 파기용
+}
+
+model Episode {
+  id Int @id @default(autoincrement())
+
+  ownerUserId String
+  owner       User             @relation("EpisodeOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  date        DateTime
+  title       String
+  memo        String           @default("")
+  placeId     Int
+  place       Place            @relation(fields: [placeId], references: [id])
+  mates       EpisodeMate[]
+  pictures    EpisodePicture[]
+  tags        EpisodeTag[]
+  createdAt   DateTime         @default(now())
 }
