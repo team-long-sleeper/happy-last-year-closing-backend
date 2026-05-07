@@ -40,5 +40,5 @@ jobs:
               --name hlyc-backend \
               --restart always \
               -p 4000:4000 \
-              --env-file /home/ec2-user/.env \
+              --env-file /home/ec2-user/happy-last-year-closing-backend/.env \
               ${{ secrets.DOCKERHUB_USERNAME }}/hlyc-backend:latest
