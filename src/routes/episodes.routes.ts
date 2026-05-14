@@ -3,7 +3,7 @@ import express from 'express';
 import { z, flattenError } from 'zod';
 import { requireAuth } from '../middleware/auth.js';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
-import { r2, R2_BUCKET } from '../utils/r2.js';
+import { r2, R2_BUCKET, deleteObjectsFromR2 } from '../utils/r2.js';
 import { decryptBuffer } from '../lib/security/crypto.js';
 import { fetchAndUploadPlaceThumbnail } from '../utils/placeThumbnail.js';
 import { episodePictureUrl } from '../constants/paths.js';
@@ -368,9 +368,23 @@ router.delete('/:id', requireAuth, async (req, res) => {
   const episodeId = Number(req.params.id);
   if (!Number.isInteger(episodeId)) return res.status(400).json({ message: 'Invalid Id' });
 
+  // R2 객체 삭제를 위해 key 목록을 먼저 조회. cascade로 row가 사라지면 key를 못 가져오기 때문.
+  const pictures = await prisma.episodePicture.findMany({
+    where: { episodeId, episode: { ownerUserId: userId } },
+    select: { key: true },
+  });
+
   await prisma.episode.delete({
     where: { ownerUserId: userId, id: episodeId },
   });
+
+  // DB 삭제 성공 후 R2 정리. R2 실패가 요청 실패로 이어지면 이미 지워진 DB와 정합이 안 맞으므로
+  // 실패는 로깅만 하고 응답은 성공으로 처리. R2 orphan은 추후 sweep으로 회수 가능.
+  try {
+    await deleteObjectsFromR2(pictures.map((p) => p.key));
+  } catch (err) {
+    console.error('[episodes.delete] R2 객체 삭제 실패', { episodeId, err });
+  }
 
   return res.status(204).send();
 });
@@ -470,10 +484,20 @@ router.patch('/:id', requireAuth, async (req, res) => {
       });
     }
 
-    if (deletedPictureId)
-      await tx.episodePicture.deleteMany({
-        where: { id: { in: deletedPictureId } },
+    // 삭제 대상 사진의 key를 먼저 조회. episode ownership 필터를 같이 걸어서
+    // 다른 유저의 picture id가 섞여 들어와도 영향이 없도록 방어.
+    let deletedKeys: string[] = [];
+    if (deletedPictureId && deletedPictureId.length > 0) {
+      const toDelete = await tx.episodePicture.findMany({
+        where: { id: { in: deletedPictureId }, episode: { ownerUserId: userId } },
+        select: { key: true },
       });
+      deletedKeys = toDelete.map((p) => p.key);
+
+      await tx.episodePicture.deleteMany({
+        where: { id: { in: deletedPictureId }, episode: { ownerUserId: userId } },
+      });
+    }
 
     await tx.episodePicture.createMany({
       data: pictures
@@ -486,10 +510,17 @@ router.patch('/:id', requireAuth, async (req, res) => {
         })),
     });
 
-    return episode;
+    return { episode, deletedKeys };
   });
 
-  return res.status(200).json({ id: updateEpisode.id });
+  // DELETE와 같은 정책: DB 커밋 후 R2 정리, 실패는 로깅만.
+  try {
+    await deleteObjectsFromR2(updateEpisode.deletedKeys);
+  } catch (err) {
+    console.error('[episodes.patch] R2 객체 삭제 실패', { episodeId, err });
+  }
+
+  return res.status(200).json({ id: updateEpisode.episode.id });
 });
 
 export default router;
