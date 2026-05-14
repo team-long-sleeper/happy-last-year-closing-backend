@@ -140,4 +140,5 @@ vite.config.ts.timestamp-*
 
 /src/generated/prisma
 
-.claude/
+.claude/settings.local.json
+

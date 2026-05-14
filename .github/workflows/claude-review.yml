@@ -1,0 +1,59 @@
+name: Claude PR Review (Backend)
+
+on:
+    pull_request:
+        types: [ ready_for_review, synchronize ]
+        branches: [ dev ]
+
+jobs:
+    review:
+        # 1) draft는 리뷰 안 함 (synchronize가 draft에서도 발동하는 거 방지)
+        # 2) PR 제목에 [skip review] 있으면 스킵
+        # 3) bot PR 스킵 (Dependabot 등 자동 PR로 비용 새는 거 방지)
+        if: |
+            github.event.pull_request.draft == false &&
+            !contains(github.event.pull_request.title, '[skip review]') &&
+            github.event.pull_request.user.type != 'Bot'
+
+        runs-on: ubuntu-latest
+
+        permissions:
+            contents: read
+            pull-requests: write
+            id-token: write
+
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            # PR 크기 체크 - 너무 크면 스킵
+            - name: Check PR size
+              id: size_check
+              run: |
+                  CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- '*.ts' '*.tsx' '*.js' '*.jsx' | wc -l)
+                  echo "changed_files=$CHANGED" >> $GITHUB_OUTPUT
+                  if [ $CHANGED -gt 30 ]; then
+                      echo "::warning::PR이 너무 큽니다 ($CHANGED files). 리뷰 스킵."
+                      echo "skip=true" >> $GITHUB_OUTPUT
+                  else
+                      echo "변경된 파일: $CHANGED개"
+                  fi
+
+            - name: Claude Code Review
+              if: steps.size_check.outputs.skip != 'true'
+              uses: anthropics/claude-code-action@v1
+              with:
+                  anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+                  prompt: |
+                      이 PR을 코드 리뷰해줘. `.claude/skills/node-backend-review/SKILL.md` 에 있는 skill 기준을 따라서:
+
+                      1. 문제가 있는 라인에 GitHub inline comment 달아줘 (PR review comment 형식으로)
+                      2. 마지막에 전체 총평을 PR review summary로 작성해줘
+                         - ## 치명 (Critical) / ## 주요 (Major) / ## 어드바이스 (Advisory) 섹션으로 분류
+                         - 빈 섹션은 생략
+                         - Overall 단락으로 마무리
+
+                      리뷰 범위: 변경된 `.ts`, `.tsx`, `.js`, `.jsx` 파일만.
+                      스타일(들여쓰기, 세미콜론)은 지적하지 마.
+                      한국어로 작성해줘.
