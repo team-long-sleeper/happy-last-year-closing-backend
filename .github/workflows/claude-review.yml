@@ -3,6 +3,7 @@ name: Claude PR Review (Backend)
 on:
     pull_request:
         types: [ ready_for_review, synchronize ]
+        branches: [ dev ]
 
 jobs:
     review:
