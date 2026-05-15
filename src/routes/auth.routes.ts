@@ -12,14 +12,13 @@ import { OAuthProvider } from '../generated/prisma/enums.js';
 import * as Sentry from '@sentry/node';
 import { AppError, AuthError, NotFoundError } from '@lib/errors.js';
 import { ACCOUNT_GRACE_PERIOD_MS, isWithinGracePeriod } from '../constants/account.js';
+import { ACCESS_TTL_SECONDS, AUTH_COOKIE_OPTS, REFRESH_TTL_SECONDS } from '../constants/cookies.js';
 import type { TransactionClient } from '../generated/prisma/internal/prismaNamespace.js';
 
 const router = express.Router();
 const api_host = 'https://kapi.kakao.com'; // 카카오 API 호출 서버 주소
 
 const JWT_SECRET = assertEnv('JWT_SECRET');
-const ACCESS_TTL_SECONDS = 60 * 15; // 15분
-const REFRESH_TTL_SECONDS = 60 * 60 * 24 * 30; // 30일
 const RESTORE_TTL_SECONDS = 60 * 10; // 10분 — pending 상태에서 복구/재생성 결정까지의 짧은 윈도우
 const JWT_ISSUER = 'happy-last-year-closing';
 const JWT_AUDIENCE_ACCESS = 'happy-last-year-closing';
@@ -434,21 +433,8 @@ router.post('/login', async (req, res) => {
     if (!user) throw new AuthError('User not found', 'USER_NOT_FOUND');
 
     // access token도 해시화 해야하는거 아닌가?
-    res.cookie('access_token', accessToken, {
-      maxAge: ACCESS_TTL_SECONDS * 1000,
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/api',
-    });
-
-    res.cookie('refresh_key', sessionKey, {
-      maxAge: REFRESH_TTL_SECONDS * 1000,
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/api',
-    });
+    res.cookie('access_token', accessToken, { ...AUTH_COOKIE_OPTS, maxAge: ACCESS_TTL_SECONDS * 1000 });
+    res.cookie('refresh_key', sessionKey, { ...AUTH_COOKIE_OPTS, maxAge: REFRESH_TTL_SECONDS * 1000 });
 
     return res.status(200).json({ user });
   } catch (error) {
@@ -624,21 +610,8 @@ router.post('/refresh', async (req, res) => {
     });
   });
 
-  res.cookie('access_token', newAccess, {
-    maxAge: ACCESS_TTL_SECONDS * 1000,
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/api',
-  });
-
-  res.cookie('refresh_key', newSessionKey, {
-    maxAge: REFRESH_TTL_SECONDS * 1000,
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/api',
-  });
+  res.cookie('access_token', newAccess, { ...AUTH_COOKIE_OPTS, maxAge: ACCESS_TTL_SECONDS * 1000 });
+  res.cookie('refresh_key', newSessionKey, { ...AUTH_COOKIE_OPTS, maxAge: REFRESH_TTL_SECONDS * 1000 });
 
   return res.sendStatus(204);
 });
