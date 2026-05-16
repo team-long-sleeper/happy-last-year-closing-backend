@@ -45,15 +45,22 @@ jobs:
               uses: anthropics/claude-code-action@v1
               with:
                   anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+                  claude_args: '--allowed-tools "Bash(git diff:*),Bash(git log:*),Read,Grep,Glob,mcp__github_inline_comment__create_inline_comment"'
                   prompt: |
-                      이 PR을 코드 리뷰해줘. `.claude/skills/node-backend-review/SKILL.md` 에 있는 skill 기준을 따라서:
+                      이 PR을 코드 리뷰하고 GitHub에 inline 코멘트를 남겨줘.
 
-                      1. 문제가 있는 라인에 GitHub inline comment 달아줘 (PR review comment 형식으로)
-                      2. 마지막에 전체 총평을 PR review summary로 작성해줘
-                         - ## 치명 (Critical) / ## 주요 (Major) / ## 어드바이스 (Advisory) 섹션으로 분류
-                         - 빈 섹션은 생략
-                         - Overall 단락으로 마무리
+                      **반드시 도구 호출로 코멘트를 남겨야 해:**
+                      - 문제가 있는 라인마다 `mcp__github_inline_comment__create_inline_comment` 도구를 호출해서 inline 코멘트를 달아.
+                      - 단순히 텍스트로 답하지 말고, **반드시 도구를 호출**해서 PR에 실제 코멘트가 달리게 해.
 
-                      리뷰 범위: 변경된 `.ts`, `.tsx`, `.js`, `.jsx` 파일만.
-                      스타일(들여쓰기, 세미콜론)은 지적하지 마.
-                      한국어로 작성해줘.
+                      **리뷰 기준:**
+                      `.claude/skills/node-backend-review/SKILL.md` 의 기준을 따라.
+
+                      **리뷰 범위:**
+                      변경된 `.ts`, `.tsx`, `.js`, `.jsx` 파일만. 스타일(들여쓰기, 세미콜론)은 지적하지 마.
+
+                      **총평:**
+                      모든 inline 코멘트 다 단 후, 마지막 응답에 한국어로:
+                      - ## 치명 (Critical) / ## 주요 (Major) / ## 어드바이스 (Advisory) 섹션으로 분류
+                      - 빈 섹션은 생략
+                      - Overall 단락으로 마무리
