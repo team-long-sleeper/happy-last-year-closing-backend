@@ -11,6 +11,9 @@ RUN npm run build
 FROM node:22-alpine
 WORKDIR /app
 
+ARG APP_VERSION
+LABEL org.opencontainers.image.revision=$APP_VERSION
+
 COPY package*.json ./
 RUN npm ci --omit=dev
 
