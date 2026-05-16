@@ -4,20 +4,12 @@ import { hashRefreshToken } from '@lib/auth/refreshToken.js';
 import { getKakaoAccessToken, unlinkKakao } from '@lib/auth/kakao.js';
 import { requireAuth } from '../middleware/auth.js';
 import { NotFoundError } from '@lib/errors.js';
+import { AUTH_COOKIE_OPTS } from '../constants/cookies.js';
 import * as Sentry from '@sentry/node';
 import express from 'express';
 
 const router = express.Router();
 const api_host = 'https://kapi.kakao.com'; // 카카오 API 호출 서버 주소
-
-// 쿠키 옵션은 auth.routes.ts에서 쿠키를 발급할 때 쓴 값과 동일해야
-// clearCookie가 실제로 같은 쿠키를 지운다. (path/sameSite/secure 불일치 시 못 지움)
-const AUTH_COOKIE_OPTS = {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: 'lax' as const,
-  path: '/api',
-};
 
 function clearAuthCookies(res: express.Response) {
   res.clearCookie('access_token', AUTH_COOKIE_OPTS);
