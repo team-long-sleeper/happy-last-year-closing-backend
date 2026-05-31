@@ -175,8 +175,6 @@ router.get('', requireAuth, async (req, res) => {
   const { userId: ownerUserId } = req.auth!;
   const { startDate, endDate, contactIds, placeIds, tagIds, cursor } = req.query;
 
-  console.log(ownerUserId);
-
   const cursorId = cursor ? Number(cursor) : undefined;
 
   const parsedContactIds = contactIds
@@ -262,8 +260,6 @@ router.get('', requireAuth, async (req, res) => {
   }));
 
   const nextCursor = hasNext ? items[items.length - 1]?.id : null;
-
-  console.log(nextCursor);
 
   return res.status(200).json({ episodes: items, nextCursor });
 });
