@@ -7,6 +7,7 @@ import { r2, R2_BUCKET, deleteObjectsFromR2 } from '../utils/r2.js';
 import { decryptBuffer } from '../lib/security/crypto.js';
 import { fetchAndUploadPlaceThumbnail } from '../utils/placeThumbnail.js';
 import { episodePictureUrl } from '../constants/paths.js';
+import { PAGE_SIZE } from '../constants/episodes.js';
 
 const router = express.Router();
 
@@ -172,9 +173,8 @@ router.post('', requireAuth, async (req, res) => {
 
 router.get('', requireAuth, async (req, res) => {
   const { userId: ownerUserId } = req.auth!;
-  const { startDate, endDate, contactIds, placeIds, tagIds, cursor, limit } = req.query;
+  const { startDate, endDate, contactIds, placeIds, tagIds, cursor } = req.query;
 
-  const take = Math.min(Number(limit) || 20, 50);
   const cursorId = cursor ? Number(cursor) : undefined;
 
   const parsedContactIds = contactIds
@@ -204,10 +204,12 @@ router.get('', requireAuth, async (req, res) => {
     ...(parsedTagIds?.length ? { tags: { some: { tagId: { in: parsedTagIds } } } } : {}),
   };
 
+  const take = PAGE_SIZE + 1;
+
   const episodes = await prisma.episode.findMany({
     where,
     orderBy: { date: 'desc' },
-    take: take + 1,
+    take,
     ...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {}),
     include: {
       pictures: { orderBy: { order: 'asc' } },
@@ -235,7 +237,7 @@ router.get('', requireAuth, async (req, res) => {
     },
   });
 
-  const hasNext = episodes.length > take;
+  const hasNext = episodes.length > PAGE_SIZE;
   if (hasNext) episodes.pop();
 
   const items = episodes.map((ep) => ({
