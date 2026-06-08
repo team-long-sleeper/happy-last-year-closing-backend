@@ -329,7 +329,7 @@ router.get('/:id', requireAuth, async (req, res) => {
         include: {
           contact: {
             select: {
-              profileImage: true,
+              image: true,
               id: true,
               name: true,
               linkedUser: {

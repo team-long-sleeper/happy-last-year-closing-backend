@@ -7,6 +7,7 @@ import episodesRoutes from './episodes.routes.js';
 import uploadsRoutes from './uploads.routes.js';
 import staticsRoutes from './stats.route.js';
 import tagsRoutes from './tags.route.js';
+import contactsRoutes from './contacts.routes.js';
 
 export const routes = Router();
 
@@ -21,4 +22,5 @@ routes.use('/friends', friendsRoutes);
 routes.use('/episodes', episodesRoutes);
 routes.use('/uploads', uploadsRoutes);
 routes.use('/tags', tagsRoutes);
+routes.use('/contacts', contactsRoutes);
 routes.use('/statics', staticsRoutes);

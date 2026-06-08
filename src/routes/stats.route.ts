@@ -84,7 +84,7 @@ router.get('', requireAuth, async (req, res) => {
   });
   const topContactsRaw = await prisma.contact.findMany({
     where: { id: { in: topContactRows.map((r) => r.contactId) } },
-    select: { id: true, name: true, profileImage: true },
+    select: { id: true, name: true, image: true },
   });
   const contactCountMap = new Map(topContactRows.map((r) => [r.contactId, r._count.episodeId]));
   const contactMap = new Map(topContactsRaw.map((c) => [c.id, c]));

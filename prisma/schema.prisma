@@ -31,6 +31,7 @@ model User {
   episodes        Episode[]        @relation("EpisodeOwner")
   placeFavorites  PlaceFavorite[]
   tags            Tag[]
+  contactGroups   ContactGroup[]   @relation("OwnerContactGroups")
 }
 
 model OAuthAccount {
@@ -60,14 +61,38 @@ model Contact {
   providerUserId String?
   linkedUserId   String?
   createdAt      DateTime       @default(now())
-  profileImage   String?
+  image          String?
 
   owner      User  @relation("OwnerContacts", fields: [ownerUserId], references: [id], onDelete: Cascade)
   linkedUser User? @relation("LinkedUser", fields: [linkedUserId], references: [id])
 
   episodes EpisodeMate[]
 
+  contactGroupMembers ContactGroupMember[]
+
   @@unique([ownerUserId, provider, providerUserId])
+}
+
+model ContactGroup {
+  id          String   @id @default(uuid())
+  ownerUserId String
+  name        String
+  image       String
+  createdAt   DateTime @default(now())
+
+  owner   User                 @relation("OwnerContactGroups", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  members ContactGroupMember[]
+}
+
+model ContactGroupMember {
+  contactId      String
+  contactGroupId String
+
+  contact      Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contactGroup ContactGroup @relation(fields: [contactGroupId], references: [id], onDelete: Cascade)
+
+  @@id([contactGroupId, contactId])
+  @@index([contactId]) // "이 연락처가 속한 그룹들" 역방향 조회용
 }
 
 model EpisodeMate {
@@ -206,16 +231,16 @@ model AbandonedAccount {
   // SHA-256(provider + ":" + providerUserId) — 동일 소셜 계정의 반복 재가입 탐지용
   providerIdHash   String
   provider         OAuthProvider
-  accountCreatedAt DateTime      // 원계정 생성일
+  accountCreatedAt DateTime // 원계정 생성일
   abandonedAt      DateTime      @default(now()) // 하드 딜리트 시각
-  lastKnownIpHash  String?       // SHA-256(마지막 접속 IP), IP 없으면 null
+  lastKnownIpHash  String? // SHA-256(마지막 접속 IP), IP 없으면 null
   uniqueIpCount    Int           @default(0) // 사용한 고유 IP 수 (다중 IP 부정이용 시그널)
   sessionCount     Int           @default(0) // 총 세션 수 (활동 규모 시그널)
-  violationNote    String?       // 관리자가 기재하는 약관 위반 사유
-  retainUntil      DateTime      // 보존 기한 (abandonedAt + 1년), 이후 cron으로 파기
+  violationNote    String? // 관리자가 기재하는 약관 위반 사유
+  retainUntil      DateTime // 보존 기한 (abandonedAt + 1년), 이후 cron으로 파기
 
   @@index([providerIdHash]) // 재가입 시도 빠른 조회
-  @@index([retainUntil])    // 만료된 레코드 정기 파기용
+  @@index([retainUntil]) // 만료된 레코드 정기 파기용
 }
 
 model Episode {

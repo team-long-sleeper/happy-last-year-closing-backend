@@ -6,7 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "npm run db:up && npm run dev:server",
-    "dev:server": "tsx --env-file=.env.local --import ./src/instrument.ts src/server.ts",
+    "dev:server": "tsx watch --env-file=.env.local --import ./src/instrument.ts src/server.ts",
     "build": "tsc && tsc-alias",
     "start": "node --import ./dist/instrument.js dist/server.js",
     "docker:prod": "docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env up -d --build",
