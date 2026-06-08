@@ -61,28 +61,38 @@ model Contact {
   providerUserId String?
   linkedUserId   String?
   createdAt      DateTime       @default(now())
-  profileImage   String?
+  image          String?
 
   owner      User  @relation("OwnerContacts", fields: [ownerUserId], references: [id], onDelete: Cascade)
   linkedUser User? @relation("LinkedUser", fields: [linkedUserId], references: [id])
 
   episodes EpisodeMate[]
 
-  contactGroup   ContactGroup? @relation(fields: [contactGroupId], references: [id])
-  contactGroupId String?
+  contactGroupMembers ContactGroupMember[]
 
   @@unique([ownerUserId, provider, providerUserId])
 }
 
 model ContactGroup {
-  id          String    @id @default(uuid())
+  id          String   @id @default(uuid())
   ownerUserId String
-  groupName   String
-  members     Contact[]
+  name        String
   image       String
-  createdAt   DateTime  @default(now())
+  createdAt   DateTime @default(now())
 
-  owner User @relation("OwnerContactGroups", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  owner   User                 @relation("OwnerContactGroups", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  members ContactGroupMember[]
+}
+
+model ContactGroupMember {
+  contactId      String
+  contactGroupId String
+
+  contact      Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contactGroup ContactGroup @relation(fields: [contactGroupId], references: [id], onDelete: Cascade)
+
+  @@id([contactGroupId, contactId])
+  @@index([contactId]) // "이 연락처가 속한 그룹들" 역방향 조회용
 }
 
 model EpisodeMate {
