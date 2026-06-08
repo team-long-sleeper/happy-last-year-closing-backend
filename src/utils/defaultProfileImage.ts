@@ -1,7 +1,9 @@
+const R2_PLACES_PUBLIC_URL = process.env.R2_PLACES_PUBLIC_URL!;
+
 export const DEFAULT_PROFILE_IMAGES: string[] = [
-  'https://happylastyear.xyz/assets/images/profile_dog_schnauzer.svg',
-  'https://happylastyear.xyz/assets/images/profile_cat.svg',
-  'https://happylastyear.xyz/assets/images/profile_dog_retriever.svg',
+  `${R2_PLACES_PUBLIC_URL}/profileImages/profile_dog_schnauzer.svg`,
+  `${R2_PLACES_PUBLIC_URL}/profileImages/profile_cat.svg`,
+  `${R2_PLACES_PUBLIC_URL}/profileImages/profile_dog_retriever.svg`,
 ] as const;
 
 export function pickRandomDefaultProfileImage(): string {
